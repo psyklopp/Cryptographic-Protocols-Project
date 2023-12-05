@@ -26,3 +26,24 @@ Realized, I just have to add Needham–Schroeder protocol to the paper
 - One summary report. Min 6 pages - Description, security property we chose, process of Proverif and Output
 - Raw code
 - Presentation slides
+
+## Final update
+I was able to verify the security properties - Confidentiality and Authentication of the CP-ABE scheme implemented along with the Needham-Schroeder public-key protocol.
+
+According to NIST:
+- 'Confidentiality' means preserving authorized restrictions on access and disclosure, including means for protecting personal privacy and proprietary information.
+- 'Authentication' refers to the process of verifying the identity of a user, process, or device, often as a prerequisite to allowing access to resources in an information system.
+
+### 📎 Paper: Security Verification of Key Exchange in Ciphertext-Policy Attribute Based Encryption
+
+**Citation**: B. Bat-Erdene, Y. Yan, M. B. M. Kamel and P. Ligeti, "Security Verification of Key Exchange in Ciphertext-Policy Attribute Based Encryption," 2022 7th International Conference on Signal and Image Processing (ICSIP), Suzhou, China, 2022, pp. 377-381, doi: [10.1109/ICSIP55141.2022.9887218](https://doi.org/10.1109/ICSIP55141.2022.9887218).
+
+- The code was written in ProVerif.
+- The files along with a summary report and presentation are in the directory.
+
+### Output
+
+![Output-Screenshot](ProVerif-Output.png)
+
+
+
