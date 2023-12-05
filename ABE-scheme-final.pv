@@ -1,0 +1,160 @@
+free c: channel.
+
+(* Public key encryption *)
+type pkey.
+type skey.
+(* type abeKey. because in the end it is public or private key *)
+
+fun pk(skey): pkey.
+fun aenc(bitstring, pkey): bitstring.
+reduc forall x: bitstring, y: skey; adec(aenc(x, pk(y)),y) = x.
+
+(* Signatures *)
+type spkey.
+type sskey.
+
+fun spk(sskey): spkey.
+fun sign(bitstring, sskey): bitstring.
+reduc forall x: bitstring, y: sskey; getmess(sign(x,y)) = x.
+reduc forall x: bitstring, y: sskey; checksign(sign(x,y), spk(y)) = x.
+
+(* Shared key encryption *)
+type nonce.
+
+fun senc(bitstring,nonce): bitstring.
+reduc forall x: bitstring, y: nonce; sdec(senc(x,y),y) = x.
+
+(* Type converter *)
+fun nonce_to_bitstring(nonce): bitstring [data,typeConverter].
+
+(* Two honest host names A and B *)
+type host.
+free A, B: host.
+
+(* Key table *)
+table keys(host, pkey).
+
+fun userid(pkey):bitstring.
+fun abePk(skey):pkey. 
+fun abeSka(skey,bitstring,bitstring):bitstring.
+fun abeEnc(pkey,bitstring,bitstring):bitstring. 
+fun abeDec(bitstring,bitstring):bitstring.
+fun abeEval(bitstring,bitstring,bool):bitstring.
+
+(* fun abeCheckKey(abeKey,bitstring,bitstring,bitstring) :bitstring. *)
+(* forall sk1:abeKey, uid:bitstring,att:bitstring; 
+abeCheckKey(abePk(sk1),abeSka(sk1,uid,att),uid,att) =pass; *)
+
+(* changed to rewrite rule so used bool and they can not be used in other equations or rewrite rules *)
+reduc forall sk1:skey, uid:bitstring,att:bitstring; 
+abeCheckKey(abePk(sk1),abeSka(sk1,uid,att),uid,att) = true.
+
+(* prev- forall msg:bitstring; abeEval(AccessPolicy,msg,pass)=msg. *)
+equation forall msg:bitstring, AccessPolicy:bitstring; abeEval(AccessPolicy,msg,true)=msg.
+
+equation forall uid:bitstring, msg:bitstring, sk1:skey, ska1:bitstring, att:bitstring, AccessPolicy:bitstring;
+(* original 
+abeDec(abeEnc( abePk(sk1), AccessPolicy, msg), abeSka(sk1,uid,att) )= abeEval(AccessPolicy, msg, abeCheckKey(abePk(sk1),abeSka(sk1,uid,att),uid,att)). *)
+abeDec(abeEnc( abePk(sk1), AccessPolicy, msg), abeSka(sk1,uid,att) )= abeEval(AccessPolicy, msg, true).
+
+(* Authentication queries *)
+event e.
+event f.
+event beginBparam(host).
+event endBparam(host).
+event beginAparam(host).
+event endAparam(host).
+
+query x: host; inj-event(endBparam(x)) ==> inj-event(beginBparam(x)).
+query x: host; inj-event(endAparam(x)) ==> inj-event(beginAparam(x)).
+
+(* Secrecy queries *)
+free secretANa, secretANb, secretBNa, secretBNb, pMsg: bitstring [private].
+query attacker(secretANa);
+      attacker(secretANb);
+      attacker(secretBNa);
+      attacker(secretBNb);
+      attacker(pMsg).
+noninterf pMsg.
+
+(* Sender - Encryption *)
+let Sender(pkSender:pkey, abePkAA:pkey, AccessPolicy:bitstring)=
+let abeEncMsg = abeEnc(abePkAA, AccessPolicy, pMsg ) in
+out( c, abeEncMsg ).
+
+(* Receiver or A - Alice (in PKI model) - Decryption *)
+let Receiver(skReceiver:skey, pkReceiver:pkey, pkS:spkey, att1:bitstring) = in( c, abeEncMsg:bitstring ) ;
+in(c, hostX: host);
+event beginBparam(hostX); 		
+out(c, (A, hostX));                              (* msg 1 -> I am the receiver, I need AA's public key *)
+in(c, ms: bitstring);                            (* msg 2 - ms -> the requested public key signed with the secret signing key *)
+let (pkX: pkey, =hostX) = checksign(ms, pkS) in  (* pkX public key of AA *)
+new Na: nonce; 
+out(c, aenc((Na, A), pkX));                      (* msg 3 --> send Nonce Na + id-A encrypted with pkX - public key of AA *)
+in(c, m: bitstring);                             (* msg 6 *)
+let (=Na, NX: nonce) = adec(m, skReceiver) in
+out(c, aenc(nonce_to_bitstring(NX), pkX));       (* msg 7 *)
+if hostX = B then
+event endAparam(A);
+out(c, senc(secretANa, Na));
+out(c, senc(secretANb, NX)); (* NX is Nb - Secret nonce from Attribute Authority *)
+
+out( c, senc(userid(pkReceiver),NX)); (* NX is Nb - Secret of Attribute Authority *)
+out( c, senc(att1,Na));				  (* Na - Secret of Receiver *)
+
+in( c , encAbeSkAtt1:bitstring );
+let abeSkAtt1 = adec(sdec(encAbeSkAtt1, Na), skReceiver) in
+if abeCheckKey(pkX,abeSkAtt1,userid(pkReceiver),att1) = true
+then let message = abeDec(abeEncMsg, abeSkAtt1) in
+event e.
+
+(* Attribute Authority  or B - Bob (in PKI model)- Generating secret key and sending to Receiver  *)
+let AA(pkS:spkey, abeSkAA:skey)=
+in(c, m: bitstring);                               (* msg 3 - m - nonce + id-A or Receiver encrypted with public key of AA*)
+let (NY: nonce, hostY: host) = adec(m, abeSkAA) in
+event beginAparam(hostY);
+out(c, (B, hostY));                                (* msg 4 -> sent to CA - I am AA, I need A-Receiver's public key *)
+in(c, ms: bitstring);                              (* msg 5 -> ms - the requested public key signed with the secret signing key*)
+let (pkY: pkey,=hostY) = checksign(ms, pkS) in     (* pkY public key of Receiver *)
+new Nb: nonce;
+out(c, aenc((NY, Nb, B), pkY));                    (* msg 6 *)
+in(c, m3: bitstring);                              (* msg 7 *)
+if nonce_to_bitstring(Nb) = adec(m3, abeSkAA) then
+if hostY = A then
+event endBparam(B);
+out(c, senc(secretBNa, NY)); (* NY is Na - Secret nonce from Receiver *)
+out(c, senc(secretBNb, Nb));
+
+in(c, userX:bitstring);
+in(c, encAtt1:bitstring);
+
+let att1 = sdec(encAtt1,NY) in (* NY is Na - Secret of Receiver *)
+event f;
+let userA = sdec(userX,Nb) in  (* Nb - Secret of AA *)
+if userA=userid(pkY) then
+out( c, aenc(senc(abeSka(abeSkAA, userA, att1),NY),pkY)).
+
+(* Trusted key server *)
+let processS(skS: sskey) =  
+	in(c,(a: host, b: host)); 
+	get keys(=b, sb) in
+	out(c,sign((sb,b), skS)). (* Sends the requested public key signed with the secret signing key *)
+
+(* Key registration *)
+let processK =
+	in(c, (h: host, k: pkey));
+	if h <> A && h <> B then insert keys(h,k).
+
+(* Main process - Generating secret key and sending to Receiver  *)
+process
+new att1:bitstring; new AccessPolicy:bitstring;
+new skSender:skey ; new skReceiver:skey;
+let pkSender=pk(skSender) in out( c, pkSender) ;
+let pkReceiver=pk(skReceiver) in out( c, pkReceiver) ; insert keys(A, pkReceiver);
+new abeSkAA:skey ; let abePkAA=abePk(abeSkAA) in out( c,abePkAA ) ; insert keys(B, abePkAA);
+
+new skS: sskey; let pkS = spk(skS) in out(c, pkS);
+Sender(pkSender,abePkAA,AccessPolicy) | 
+Receiver(skReceiver, pkReceiver, pkS, att1) | 
+AA(pkS, abeSkAA) | processS(skS) | processK
+

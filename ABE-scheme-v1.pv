@@ -1,0 +1,101 @@
+free c: channel.
+
+(* Public key encryption *)
+type pkey.
+type skey.
+type abeKey.
+
+fun pk(skey): pkey.
+fun aenc(bitstring, pkey): bitstring.
+reduc forall x: bitstring, y: skey; adec(aenc(x, pk(y)),y) = x.
+
+(* Signatures *)
+type spkey.
+type sskey.
+
+fun spk(sskey): spkey.
+fun sign(bitstring, sskey): bitstring.
+reduc forall x: bitstring, y: sskey; getmess(sign(x,y)) = x.
+reduc forall x: bitstring, y: sskey; checksign(sign(x,y), spk(y)) = x.
+
+(* Shared key encryption *)
+type nonce.
+
+fun senc(bitstring,nonce): bitstring.
+reduc forall x: bitstring, y: nonce; sdec(senc(x,y),y) = x.
+
+(* Type converter *)
+fun nonce_to_bitstring(nonce): bitstring [data,typeConverter].
+
+(* Two honest host names A and B *)
+type host.
+free A, B: host.
+
+(* Key table *)
+table keys(host, pkey).
+
+fun userid(pkey):bitstring.
+fun abePk(abeKey):abeKey. 
+fun abeSka(abeKey,bitstring,bitstring):bitstring.
+(* equation forall abeSkAA:abeKey, userA:bitstring, att1:bitstring, encAbeSkAtt1:bitstring; abeSka(abeSkAA, userA, att1) = encAbeSkAtt1. *)
+fun abeEnc(abeKey,bitstring,bitstring):bitstring. 
+fun abeDec(bitstring,bitstring):bitstring.
+fun abeEval(bitstring,bitstring,bool):bitstring.
+(* fun abeCheckKey(abeKey,bitstring,bitstring,bitstring) :bitstring. *)
+reduc forall sk1:abeKey, uid:bitstring,att:bitstring; abeCheckKey(abePk(sk1),abeSka(sk1,uid,att),uid,att) = true.
+equation forall msg:bitstring, AccessPolicy:bitstring; abeEval(AccessPolicy,msg,true)=msg.
+equation forall uid:bitstring, msg:bitstring, sk1:abeKey, ska1:bitstring, att:bitstring, AccessPolicy:bitstring;
+(* abeDec(abeEnc( abePk(sk1), AccessPolicy, msg), abeSka(sk1,uid,att) )= abeEval(AccessPolicy, msg, abeCheckKey(abePk(sk1),abeSka(sk1,uid,att),uid,att)). *)
+abeDec(abeEnc( abePk(sk1), AccessPolicy, msg), abeSka(sk1,uid,att) )= abeEval(AccessPolicy, msg, true).
+
+
+(* Authentication queries *)
+event e.
+
+(* Secrecy queries *)
+free pMsg: bitstring [private].
+noninterf pMsg.
+query attacker(pMsg).
+
+(* Sender - Encryption *)
+
+let Sender(pkSender:pkey, abePkAA:abeKey, AccessPolicy:bitstring)=
+let abeEncMsg = abeEnc(abePkAA, AccessPolicy, pMsg ) in
+out( c, abeEncMsg ).
+
+(* Receiver - Decryption *)
+
+let Receiver(skReceiver:skey, pkReceiver:pkey, abePkAA:abeKey, att1:bitstring) = in( c, abeEncMsg:bitstring ) ;
+out( c, userid(pkReceiver));
+out( c, att1);
+
+(* in( c , abeSkAtt1:bitstring ); *)
+
+in( c , encAbeSkAtt1:bitstring );
+let abeSkAtt1 = adec(encAbeSkAtt1, skReceiver)in
+if abeCheckKey(abePkAA,abeSkAtt1,userid(pkReceiver),att1) = true
+then let m = abeDec(abeEncMsg, abeSkAtt1) in
+event e.
+
+
+(* Attribute Authority  - Generating secret key and sending to Receiver  *)
+
+let AA(pkReceiver:pkey, abeSkAA:abeKey)=
+in(c, (userX:bitstring, att1:bitstring)) ;
+let userA = userX in
+if userA=userid(pkReceiver) then
+out( c, abeSka(abeSkAA, userA, att1) ).
+
+
+(* Main process - Generating secret key and sending to Receiver  *)
+
+process
+new skSender:skey ; new skReceiver:skey; new att1:bitstring; new AccessPolicy:bitstring;
+let pkSender=pk(skSender) in out( c, pkSender) ;     
+let pkReceiver=pk(skReceiver) in out( c, pkReceiver) ;
+new abeSkAA:abeKey ; let abePkAA=abePk(abeSkAA) in out( c,abePkAA ) ; 
+
+Sender(pkSender,abePkAA,AccessPolicy) | 
+Receiver(skReceiver, pkReceiver, abePkAA, att1) | 
+AA(pkReceiver, abeSkAA)
+
